@@ -289,6 +289,37 @@ int writeDepthDmb(const std::string file_path, const cv::Mat_<float> depth)
     fwrite(data,sizeof(float),datasize,outimage);
 
     fclose(outimage);
+
+        // cv::Mat jpgImage(depth.rows, depth.cols, CV_8UC3, cv::Scalar(0, 0, 0));
+        // double minValue, maxValue;    // 最大值，最小值
+        // cv::Point  minIdx, maxIdx;    // 最小值坐标，最大值坐标     
+        // cv::minMaxLoc(depth, &minValue, &maxValue, &minIdx, &maxIdx);
+        // double depthRange = maxValue - minValue;
+        // for(int i = 0; i < h; ++i) {
+        //     for(int j = 0; j < w; ++j) {
+        //         float d = depth.at<float>(i, j);
+        //         jpgImage.at<cv::Vec3b>(i, j)[0] = 255 * d / depthRange;
+        //         jpgImage.at<cv::Vec3b>(i, j)[1] = 255 * d / depthRange;
+        //         jpgImage.at<cv::Vec3b>(i, j)[2] = 255 * d / depthRange;
+        //     }
+        // }
+        // cv::imwrite(file_path + ".jpg", jpgImage);
+
+    double min;
+    double max;
+    cv::minMaxIdx(depth, &min, &max);
+    cv::Mat adjMap;
+    // expand your range to 0..255. Similar to histEq();
+    depth.convertTo(adjMap,CV_8UC1, 255 / (max-min), -min);
+
+    // this is great. It converts your grayscale image into a tone-mapped one,
+    // much more pleasing for the eye
+    // function is found in contrib module, so include contrib.hpp
+    // and link accordingly
+    cv::Mat falseColorsMap;
+    applyColorMap(adjMap, falseColorsMap, cv::COLORMAP_JET);
+
+    cv::imwrite(file_path + ".jpg", falseColorsMap);
     return 0;
 }
 
@@ -419,7 +450,8 @@ static float GetDisparity(const Camera &camera, const int2 &p, const float &dept
 void ACMM::SetGeomConsistencyParams(bool multi_gemetry=false)
 {
     params.geom_consistency = true;
-    params.max_iterations = 2;
+    // params.max_iterations = 2;
+    params.max_iterations = 4;
     if (multi_gemetry) {
        params.multi_geometry = true;
     }
@@ -439,6 +471,7 @@ void ACMM::InuputInitialization(const std::string &dense_folder, const std::vect
     std::string image_folder = dense_folder + std::string("/images");
     std::string cam_folder = dense_folder + std::string("/cams");
 
+    // 加载参考图像和邻域图像
     std::stringstream image_path;
     image_path << image_folder << "/" << std::setw(8) << std::setfill('0') << problem.ref_image_id << ".jpg";
     cv::Mat_<uint8_t> image_uint = cv::imread(image_path.str(), cv::IMREAD_GRAYSCALE);
@@ -798,8 +831,8 @@ void RunJBU(const cv::Mat_<float>  &scaled_image_float, const cv::Mat_<float> &s
     }
 
     std::vector<cv::Mat_<float> > imgs(JBU_NUM);
-    imgs[0] = scaled_image_float.clone();
-    imgs[1] = src_depthmap.clone();
+    imgs[0] = scaled_image_float.clone();  // 这个是本级尺度的彩色原图
+    imgs[1] = src_depthmap.clone();  // 这个是上一层的深度图，需要上采样
 
     JBU jbu;
     jbu.jp_h.height = rows;

@@ -161,7 +161,9 @@ __device__ float4 GenerateRandomNormal(const Camera camera, const int2 p, curand
     normal.w = 0;
 
     float4 view_direction = GetViewDirection(camera, p, depth);
+    // normal 和 view_direction 都是归一化向量，故其点积即是夹角的cosine。
     float dot_product = normal.x * view_direction.x + normal.y * view_direction.y + normal.z * view_direction.z;
+    // 保证随机出的法向量是朝向镜头的，否则不符合常识
     if (dot_product > 0.0f) {
         normal.x = -normal.x;
         normal.y = -normal.y;
@@ -212,6 +214,7 @@ __device__ float4 GenerateRandomPlaneHypothesis(const Camera camera, const int2 
 {
     float depth = curand_uniform(rand_state) * (depth_max - depth_min) + depth_min;
     float4 plane_hypothesis = GenerateRandomNormal(camera, p, rand_state, depth);
+    // TODO: 平面假设的w是到相机光心的距离？
     plane_hypothesis.w = GetDistance2Origin(camera, p, depth, plane_hypothesis);
     return plane_hypothesis;
 }
@@ -532,6 +535,7 @@ __global__ void RandomInitialization(cudaTextureObjects *texture_objects, Camera
     curand_init(clock64(), p.y, p.x, &rand_states[center]);
 
     if (!params.geom_consistency && !params.hierarchy ) {
+        // 图像金字塔的第一层  全随机初始化
         plane_hypotheses[center] = GenerateRandomPlaneHypothesis(cameras[0], p, &rand_states[center], params.depth_min, params.depth_max);
         costs[center] = ComputeMultiViewInitialCostandSelectedViews(texture_objects[0].images, cameras, p, plane_hypotheses[center], &selected_views[center], params);
     }
@@ -974,7 +978,7 @@ __device__ void CheckerboardPropagation(const cudaTextureObject_t *images, const
     cost_now /= weight_norm;
     costs[center] = cost_now;
     float depth_now = ComputeDepthfromPlaneHypothesis(cameras[0], plane_hypotheses[center], p);
-    float4 plane_hypotheses_now;
+    float4 plane_hypotheses_now = plane_hypotheses[center];
     if (flag[min_cost_idx]) {
         float depth_before = ComputeDepthfromPlaneHypothesis(cameras[0], plane_hypotheses[positions[min_cost_idx]], p);
 

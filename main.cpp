@@ -88,6 +88,8 @@ void ProcessProblem(const std::string &dense_folder, const std::vector<Problem> 
         acmm.SetHierarchyParams();
     }
 
+    // 加载原图、相机，如果设置了几何一致性geom_consistency，则还要读深度图；
+    // 如果设置了多层几何一致性multi_geometrty，则读上一次经过几何一致性的深度图
     acmm.InuputInitialization(dense_folder, problems, idx);
 
     acmm.CudaSpaceInitialization(dense_folder, problem);
@@ -297,6 +299,19 @@ void RunFusion(std::string &dense_folder, const std::vector<Problem> &problems, 
 
     std::string ply_path = dense_folder + "/ACMM/ACMM_model.ply";
     StoreColorPlyFileBinaryPointCloud (ply_path, PointCloud);
+
+    // ccc exp: save masked depth map
+    for (size_t i = 0; i < num_images; ++i) {
+        std::cout << "saving masked depth map " << std::setw(8) << std::setfill('0') << i << "..." << std::endl;
+        std::stringstream result_path;
+        result_path << dense_folder << "/ACMM" << "/2333_" << std::setw(8) << std::setfill('0') << i;
+        std::string result_folder = result_path.str();
+        std::string depth_path = result_folder + "/depths_fused.dmb";
+        // cv::Mat_<float> masked_depth = depths[i].mul(masks[i]);
+        cv::Mat masked_depth;
+        cv::multiply(depths[i], masks[i], masked_depth, 1.0, CV_32FC1);
+        writeDepthDmb(depth_path, masked_depth);
+    }
 }
 
 int main(int argc, char** argv)
@@ -308,7 +323,7 @@ int main(int argc, char** argv)
 
     std::string dense_folder = argv[1];
     std::vector<Problem> problems;
-    GenerateSampleList(dense_folder, problems);
+    GenerateSampleList(dense_folder, problems);  // Problem里面存放参考图像id和前20邻域id
 
     std::string output_folder = dense_folder + std::string("/ACMM");
     mkdir(output_folder.c_str(), 0777);
@@ -316,6 +331,7 @@ int main(int argc, char** argv)
     size_t num_images = problems.size();
     std::cout << "There are " << num_images << " problems needed to be processed!" << std::endl;
 
+    // 降采样次数，直到第一层的图片分辨率小于1000
     int max_num_downscale = ComputeMultiScaleSettings(dense_folder, problems);
 
      int flag = 0;
@@ -333,7 +349,8 @@ int main(int argc, char** argv)
             }
         }
 
-        if (flag == 0) {
+        // 第一层不用上采样，且第一层所有ProcessProblem中 hierarchy为false。故单独用flag控制
+        if (flag == 0) {  
             flag = 1;
             geom_consistency = false;
             for (size_t i = 0; i < num_images; ++i) {
